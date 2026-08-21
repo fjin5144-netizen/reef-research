@@ -56,8 +56,13 @@ def yahoo_chart(path):
 
 
 def yahoo(sym, days=800):
+    # 窗口起点锚在 UTC 当日零点，不是「此刻」。
+    # daily_brief.py 里是 now - days*86400，同一天跑两次起点差几分钟，就可能
+    # 多吞或少吞最老的那根 K 线，让分位数一类的派生值无意义地抖一下。本机每天
+    # 只跑一次看不出来，但这里一天排 4 档 —— 研究数据集里同一个日期不该有两个值。
     p2 = int(time.time())
-    p1 = p2 - days * 86400
+    p1 = int(datetime.datetime.now(datetime.timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0).timestamp()) - days * 86400
     d = yahoo_chart(f"/v8/finance/chart/{sym}"
                     f"?period1={p1}&period2={p2}&interval=1d")["chart"]["result"][0]
     ts, q = d["timestamp"], d["indicators"]["quote"][0]
@@ -155,6 +160,11 @@ def build():
         "tqqq": tc[-1],
         "vix": vc[-1],
         "vix_pctile_2y": pctile(vc, vc[-1]),
+        # 上面那个是 daily_brief.py 的老口径：「当下拿到的全部 800 日历天」，
+        # 实际约 549 个交易日，长度随取数时点浮动。保留它是为了和本机简报逐字对比。
+        # 下面这个才是名副其实的两年分位：严格取当日往前 504 个交易日。
+        # daily.csv 主表用的是这一个 —— 只有它能和事后重建的历史行同口径。
+        "vix_pctile_2y_pit": pctile(vc[-504:], vc[-1]),
         "ma50": ma50, "ma100": ma100, "ma200": ma200,
         "vs_ma200_pct": (qc[-1] / ma200 - 1) * 100 if ma200 else None,
         "vs_ma100_pct": (qc[-1] / ma100 - 1) * 100 if ma100 else None,

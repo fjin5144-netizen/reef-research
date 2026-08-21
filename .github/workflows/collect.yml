@@ -36,11 +36,11 @@ jobs:
   collect:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0        # 下面要 rebase，浅克隆会出问题
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       # 全部标准库，没有 pip install 这一步 —— 少一个会坏的东西。

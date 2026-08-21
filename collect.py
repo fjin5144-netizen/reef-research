@@ -167,7 +167,9 @@ def spine_row_from_brief(b, collected_at):
         "ma200_rising": m["ma200_rising"],
         "vs_ma50_pct": r6(m["vs_ma50_pct"]), "vs_ma100_pct": r6(m["vs_ma100_pct"]),
         "vs_ma200_pct": r6(m["vs_ma200_pct"]),
-        "vix_pctile_2y": r6(m["vix_pctile_2y"]),
+        # 用 _pit 而不是 m["vix_pctile_2y"]：主表必须和事后重建的历史行同口径，
+        # 否则同一列里 live 行和 reconstructed 行是两个定义。原口径仍在 brief JSON 里。
+        "vix_pctile_2y": r6(m["vix_pctile_2y_pit"]),
         "tqqq_rvol20": r6(m["tqqq_rvol20"]), "tqqq_rvol60": r6(m["tqqq_rvol60"]),
         "qqq_dd_1y": r6(m["qqq_dd_from_1y_high"]), "tqqq_dd_1y": r6(m["tqqq_dd_from_1y_high"]),
         "direction_ok": rf.get("direction_ok", ""), "target_weight": rf.get("target_weight", ""),
