@@ -1,0 +1,56 @@
+name: pages
+
+# 每小时把最新读数渲染成一页，直接部署到 GitHub Pages。
+#
+# 关键：页面**不提交进仓库**（docs/index.html 在 .gitignore 里），
+# 而是由 Actions 直接部署。不这么做的话，每小时提交一次页面 = 一个月 720 个
+# 「只改了几个价格」的提交，把 data/ 那些真正有意义的提交全淹掉。
+#
+# 整页只有「此刻」那一块是盘中会动的。目标权重是收盘价算的，一天只变一次
+# —— 所以每小时跑不是为了刷新决策，是为了看方向条件还剩多少余量。
+#
+# 公开仓库的 Actions 不限量不计费，所以每小时跑一次成本是 $0。
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_run:
+    # 收盘后采集一落地就立刻重新出页，不用干等到下一个整点。
+    workflows: [collect]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 部署不能并发；排队但不取消，免得整点那次被 workflow_run 那次挤掉。
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: 渲染页面
+        # --live 会多取一次当下报价；取不到就退化成纯收盘口径的页面，
+        # 不让一次报价失败把整页干掉。
+        run: python3 make_page.py --live
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deployment
+        uses: actions/deploy-pages@v4
