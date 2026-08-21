@@ -1,5 +1,5 @@
 {
- "generated": "2026-08-21 03:28",
+ "generated": "2026-08-21 07:22",
  "warnings": [],
  "blocking": [],
  "raincheck": {
@@ -34,8 +34,8 @@
   "qqq": 710.9299926757812,
   "tqqq": 70.4800033569336,
   "vix": 16.010000228881836,
-  "vix_pctile_2y": 29.43327239488117,
-  "vix_pctile_2y_pit": 26.58730158730159,
+  "vix_pctile_2y": 29.454545454545453,
+  "vix_pctile_2y_pit": 26.38888888888889,
   "ma50": 713.0466015625,
   "ma100": 693.3032006835938,
   "ma200": 652.3730996704102,
@@ -78,18 +78,6 @@
   "+30%": 35.8
  },
  "trend_length_history": {
-  "past_uptrends": [
-   28,
-   48,
-   50,
-   55,
-   100,
-   111,
-   139
-  ],
-  "median": 55,
-  "current_day": 13,
-  "pctile": 0.0
- },
- "perf_api_asof": "2026-06-24"
+  "error": "The read operation timed out"
+ }
 }
