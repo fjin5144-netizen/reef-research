@@ -1,0 +1,81 @@
+name: collect
+
+# 收盘后采集，一天一次就够 —— 盘中读数不是快照型数据，事后能补齐。
+# 详见 collect.py 顶部的说明。
+#
+# 排 4 档而不是 1 档，理由和 wsb-attention-archiver 的 archive.yml 一样：
+# GitHub 的定时任务丢档很凶，高峰期整档跳过是常态。这里的每一档都是幂等的
+# ——第一档落地之后，后面三档取到同样的数据、写出同样的字节、git 看不到 diff、
+# 不产生提交。所以「排多档」的成本接近零，收益是当天一定有一档能落地。
+#
+# 和盘中轮询的区别就在这：15 分钟的哨兵漏了 14:15 那一格就是永久的洞，
+# 补不回来；而这里只要当天有任意一档跑成功，数据就是完整的。
+
+on:
+  schedule:
+    - cron: '30 21 * * 1-5'    # 美东夏令 17:30 / 冬令 16:30，收盘后第一档
+    - cron: '30 23 * * 1-5'
+    - cron: '30 2 * * 2-6'     # 跨到 UTC 次日，仍属同一个美股交易日
+    - cron: '30 6 * * 2-6'     # 兜底
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: '拉满 60 天盘中历史，并用日线重建历史主表'
+        type: boolean
+        default: false
+
+# 两档撞上时排队执行，不要并发写同一个分支。
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # 下面要 rebase，浅克隆会出问题
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # 全部标准库，没有 pip install 这一步 —— 少一个会坏的东西。
+
+      - name: 采集
+        run: |
+          if [ "${{ inputs.backfill }}" = "true" ]; then
+            python3 collect.py --backfill
+          else
+            python3 collect.py
+          fi
+
+      - name: 提交
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- data; then
+            echo "数据无变化 —— 本档是空操作，不提交。"
+            exit 0
+          fi
+          git add data
+          n=$(git diff --cached --numstat -- data | wc -l | tr -d ' ')
+          asof=$(python3 -c "import csv;rs=list(csv.DictReader(open('data/daily.csv')));print(rs[-1]['date'])")
+          git commit -m "collect $asof ($n files)"
+          # 四档 cron 之间、以及和手动运行之间偶尔会撞车，撞了就 rebase 重来。
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin main && git push origin HEAD:main && exit 0
+            echo "推送失败，第 $i 次重试…"
+            sleep $((i * 10))
+          done
+          echo "::error::连续 3 次推送失败"
+          exit 1
+
+      - name: 新鲜度检查
+        if: always()
+        # 上一步就算整个挂了也要跑这一步：采集静默停摆（比如 Yahoo 开始限流
+        # 机房 IP）时，这里会把 job 标红，GitHub 默认会给你发邮件。
+        run: python3 collect.py --check
