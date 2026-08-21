@@ -1,0 +1,29 @@
+{
+ "is_paid": false,
+ "chart": "https://www.tradingview.com/x/v33lDwCC/",
+ "signal": "5",
+ "trend_count": "📈13",
+ "direction": "UPTREND",
+ "day1": "Tue 8/4/26",
+ "asof": "Thu 8/20/26",
+ "qqq_close": "$710.93",
+ "qqq_cum": "-1.78%",
+ "lev_close": "$70.48",
+ "lev_cum": "-5.80%",
+ "n_days": 13,
+ "signal_path": [
+  "3",
+  "3",
+  "3",
+  "7",
+  "7",
+  "7",
+  "7",
+  "6",
+  "6",
+  "5"
+ ],
+ "lev_cum_num": -5.8,
+ "_collected_at": "2026-08-21T21:50:10Z",
+ "_note": "signal / trend_count 抓自 /api/current 的表格，该表只显示当前这一轮趋势；/api/performance 里没有 signal 这一列，所以这份快照过期不可补。"
+}
