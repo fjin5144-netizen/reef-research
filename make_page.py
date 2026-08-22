@@ -155,6 +155,13 @@ def momentum_tracks(rows):
             return (gate("ma", j) + gate("mom", j)) / 2
         if kind == "vote":
             return sum(1 for L in (63, 126, 252) if qs[j] > qs[j-L]) / 3
+        if kind == "reenter":
+            # 现行＋拐头接：牛市同现行；跌破 200 日线的空仓期里，
+            # 只要价格回到 20 日均线上方就先用半仓跟上（回测第五轮的发现：
+            # 「抄底」按深度买是接飞刀，按拐头买是把迟到的再入场追回来一半）
+            if gate("ma", j) == 1.0:
+                return 1.0
+            return 0.5 if qs[j] > sum(qs[j-19:j+1]) / 20 else 0.0
 
     def target(kind, j):
         g = gate(kind, j)
@@ -169,7 +176,8 @@ def momentum_tracks(rows):
     for kind, name, color in (("ma",    "现行 · 200日均线门", "var(--accent)"),
                               ("blend", "对半 · 均线+动量各一票", "var(--ok)"),
                               ("vote",  "三票 · 3/6/12月动量", "var(--warn)"),
-                              ("mom",   "纯动量 · 12个月", "var(--dim)")):
+                              ("mom",   "纯动量 · 12个月", "var(--dim)"),
+                              ("reenter", "现行＋拐头接 · 空仓期半仓", "#8f6fd8")):
         cur = target(kind, si - 1) or 0.0
         nav = [1.0]
         for i in range(si + 1, len(ds)):
@@ -375,10 +383,11 @@ svg{{display:block;width:100%;height:auto}}
             A(f'''    <div class="chart"><svg viewBox="0 0 680 120" preserveAspectRatio="none"
       aria-label="并行对照净值">{paths}</svg></div>
 ''')
-        A(f'''    <div class="cap">同一套仓位规则，四种「趋势还在不在」的判定并排记账（每格 = 最新目标权重 · 自
-      {E(trk["start"])} 累计）。规则已冻结，此后不改。回测说均线快、动量慢，快慢各赢一种崩盘——
-      这里让往后的真实行情投票。没跑过至少一次像样的回调之前，别急着读结论；
-      实际执行仍按上面的现行规则。</div>
+        A(f'''    <div class="cap">同一套仓位规则，五条轨道并排记账（每格 = 最新目标权重 · 自
+      {E(trk["start"])} 累计）：前四条比「趋势还在不在」由谁判定（均线快、动量慢，快慢各赢一种
+      崩盘），第五条比「空仓之后多快回来」（跌破期间价格回到 20 日线上方就先半仓跟上）。
+      规则已冻结，此后不改——这里让往后的真实行情投票。没跑过至少一次像样的回调之前，
+      别急着读结论；实际执行仍按上面的现行规则。</div>
   </div>
 ''')
 
