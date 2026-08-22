@@ -1,41 +1,14 @@
 {
- "generated": "2026-08-21 07:22",
+ "generated": "2026-08-21 03:28",
  "warnings": [],
  "blocking": [],
- "raincheck": {
-  "is_paid": false,
-  "chart": "https://www.tradingview.com/x/v33lDwCC/",
-  "signal": "5",
-  "trend_count": "📈13",
-  "direction": "UPTREND",
-  "day1": "Tue 8/4/26",
-  "asof": "Thu 8/20/26",
-  "qqq_close": "$710.93",
-  "qqq_cum": "-1.78%",
-  "lev_close": "$70.48",
-  "lev_cum": "-5.80%",
-  "n_days": 13,
-  "signal_path": [
-   "3",
-   "3",
-   "3",
-   "7",
-   "7",
-   "7",
-   "7",
-   "6",
-   "6",
-   "5"
-  ],
-  "lev_cum_num": -5.8
- },
  "market": {
   "asof": "2026-08-20",
   "qqq": 710.9299926757812,
   "tqqq": 70.4800033569336,
   "vix": 16.010000228881836,
-  "vix_pctile_2y": 29.454545454545453,
-  "vix_pctile_2y_pit": 26.38888888888889,
+  "vix_pctile_2y": 29.43327239488117,
+  "vix_pctile_2y_pit": 26.58730158730159,
   "ma50": 713.0466015625,
   "ma100": 693.3032006835938,
   "ma200": 652.3730996704102,
@@ -54,12 +27,6 @@
   "qqq_dd_from_1y_high": -4.72150500385069,
   "tqqq_dd_from_1y_high": -19.19284295973618
  },
- "cross_check": {
-  "my_ma200_regime": "RISK-ON",
-  "raincheck_regime": "UPTREND",
-  "agree": true,
-  "unavailable": false
- },
  "reef": {
   "direction_ok": true,
   "target_weight": 0.513,
@@ -72,12 +39,5 @@
   "implied_weight": 0.513,
   "note": "35% 年化波动为目标时，TQQQ 的等风险权重；回测中这是唯一在 1999-2026 全周期稳健降低回撤的改动"
  },
- "profit_ladder": {
-  "+10%": 15.8,
-  "+20%": 25.8,
-  "+30%": 35.8
- },
- "trend_length_history": {
-  "error": "The read operation timed out"
- }
+ "regime": "RISK-ON"
 }

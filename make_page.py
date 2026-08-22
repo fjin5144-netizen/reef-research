@@ -138,7 +138,6 @@ def render(live=None):
     zero_y = 120 - (0.0 - mlo) / ((mhi - mlo) or 1) * 120
 
     m = (brief or {}).get("market", {})
-    rc = (brief or {}).get("raincheck", {})
     warn = (brief or {}).get("warnings", []) + (brief or {}).get("blocking", [])
 
     # 大白话那句：解释为什么权重是现在这个数
@@ -248,10 +247,6 @@ svg{{display:block;width:100%;height:auto}}
       <tr><td class="k">TQQQ 20 日波动率</td><td class="{'warn' if rvol>.35 else ''}">{rvol*100:.1f}%</td></tr>
       <tr><td class="k">VIX</td><td>{f(last['vix'],0):.2f} · 两年分位 {f(last['vix_pctile_2y'],0):.0f}%</td></tr>
 ''')
-    if rc.get("direction"):
-        agree = str(last.get("cross_agree", "")).lower() == "true"
-        A(f'''      <tr><td class="k">Raincheck 黑箱信号</td><td class="{'ok' if agree else 'warn'}">
-        {E(rc.get("direction",""))} {E(str(rc.get("trend_count","")))} · {'与规则一致' if agree else '与规则分歧'}</td></tr>''')
     A('    </table>\n  </div>\n')
 
     if d_w:

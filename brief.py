@@ -14,7 +14,6 @@
 
 纯标准库，workflow 里不需要 pip install 任何东西。
 """
-import csv
 import datetime
 import json
 import math
@@ -75,15 +74,6 @@ def yahoo(sym, days=800):
     return out
 
 
-def raincheck_current():
-    return fetch_json("https://raincheck.fund/api/current")
-
-
-def raincheck_performance():
-    raw = _get("https://raincheck.fund/api/performance").decode()
-    return list(csv.DictReader(raw.splitlines()))
-
-
 # ---------------------------------------------------------------- 指标
 def sma(v, n):
     return sum(v[-n:]) / n if len(v) >= n else None
@@ -101,46 +91,11 @@ def pctile(v, x):
     return 100.0 * sum(1 for y in v if y <= x) / len(v)
 
 
-def parse_trend_table(html):
-    """从 /api/current 的 trend_table HTML 里抽出当前趋势逐日行"""
-    import re, html as H
-    rows = []
-    for tr in re.findall(r"<tr[^>]*>.*?</tr>", html, re.S):
-        c = [H.unescape(re.sub("<[^>]+>", "", x)).strip()
-             for x in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", tr, re.S)]
-        c = [x for x in c if x]
-        # Google Sheets 导出会带一列行号，先定位趋势计数列再对齐
-        k = next((j for j, x in enumerate(c) if "📈" in x or "📉" in x), None)
-        if k is not None and len(c) - k >= 6:
-            rows.append(c[k - 1:k + 6])   # 信号, 趋势计数, QQQ收盘, QQQ累计, 杠杆收盘, 杠杆累计, 日期
-    return rows
-
-
 # ---------------------------------------------------------------- 主流程
 def build():
     out = {"generated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
            "warnings": [], "blocking": []}
     W, BLK = out["warnings"], out["blocking"]
-
-    try:
-        cur = raincheck_current()
-    except Exception as e:
-        cur = {}
-        W.append(f"Raincheck API 不可用（{type(e).__name__}）——本次跳过官方信号与交叉核对，"
-                 f"REEF 指标不受影响。若持续失败，可能是他们给端点加了认证。")
-    trend = parse_trend_table(cur.get("trend_table", "")) if cur else []
-    out["raincheck"] = {"is_paid": cur.get("is_paid"), "chart": cur.get("chart_image_url")}
-    if trend:
-        last = trend[-1]
-        up = "📈" in last[1]
-        out["raincheck"].update({
-            "signal": last[0], "trend_count": last[1], "direction": "UPTREND" if up else "DOWNTREND",
-            "day1": trend[0][6], "asof": last[6],
-            "qqq_close": last[2], "qqq_cum": last[3],
-            "lev_close": last[4], "lev_cum": last[5],
-            "n_days": len(trend),
-            "signal_path": [r[0] for r in trend][-10:],
-        })
 
     qqq = yahoo("QQQ", 800)
     tqqq = yahoo("TQQQ", 800)
@@ -178,15 +133,7 @@ def build():
         "tqqq_dd_from_1y_high": (tc[-1] / max(tc[-252:]) - 1) * 100,
     }
 
-    # 独立规则 vs 黑箱信号 的一致性
-    my_regime = "RISK-ON" if (ma200 and qc[-1] > ma200) else "RISK-OFF"
-    their = out["raincheck"].get("direction")
-    out["cross_check"] = {
-        "my_ma200_regime": my_regime,
-        "raincheck_regime": their,
-        "agree": ((my_regime == "RISK-ON") == (their == "UPTREND")) if their else None,
-        "unavailable": their is None,
-    }
+    out["regime"] = "RISK-ON" if (ma200 and qc[-1] > ma200) else "RISK-OFF"
 
     # ---- 数据健康检查（防止按错误数据算读数）----
     today = datetime.date.today()
@@ -236,42 +183,6 @@ def build():
             "implied_weight": round(min(1.0, 0.35 / rv20), 3),
             "note": "35% 年化波动为目标时，TQQQ 的等风险权重；回测中这是唯一在 1999-2026 全周期稳健降低回撤的改动",
         }
-
-    # 距离分档止盈线
-    if trend:
-        try:
-            cum = float(out["raincheck"]["lev_cum"].replace("%", ""))
-            out["profit_ladder"] = {f"+{k}%": round(k - cum, 2) for k in (10, 20, 30)}
-            out["raincheck"]["lev_cum_num"] = cum
-        except Exception:
-            pass
-
-    # 趋势长度的历史分位
-    try:
-        perf = raincheck_performance()
-        lens, cur_len, cur_dir = [], 0, None
-        for r in perf:
-            tcnt = r["Trend Count"]
-            d = "up" if "📈" in tcnt else "down"
-            n = "".join(ch for ch in tcnt if ch.isdigit())
-            if n == "1":
-                if cur_dir:
-                    lens.append((cur_dir, cur_len))
-                cur_dir, cur_len = d, 1
-            else:
-                cur_len += 1
-        if cur_dir:
-            lens.append((cur_dir, cur_len))
-        ups = sorted(l for d, l in lens if d == "up")
-        out["trend_length_history"] = {
-            "past_uptrends": ups,
-            "median": ups[len(ups) // 2] if ups else None,
-            "current_day": out["raincheck"].get("n_days"),
-            "pctile": round(pctile(ups, out["raincheck"].get("n_days", 0)), 1) if ups else None,
-        }
-        out["perf_api_asof"] = perf[-1]["Date"]
-    except Exception as e:
-        out["trend_length_history"] = {"error": str(e)}
 
     return out
 

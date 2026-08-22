@@ -4,14 +4,11 @@ REEF 研究数据采集 —— 每个交易日收盘后跑一次就够。
 
 为什么不是每 15 分钟轮询一次：
   盘中读数**不是快照型数据**。Yahoo 的 15 分钟 K 线可以回头拉 60 天，
-  raincheck 的 /api/performance 是一份从 2023-11 至今的完整 CSV。
-  收盘后一次性取，和盘中戳 26 次拿到的东西一模一样，但没有 GitHub
-  cron 丢档的问题，也不用每天几十个提交。
+  日线更是想拉多久拉多久。收盘后一次性取，和盘中戳 26 次拿到的东西
+  一模一样，但没有 GitHub cron 丢档的问题，也不用每天几十个提交。
 
-  真正只能当场抓、过期不候的只有一样：raincheck 首页表格里那个 signal
-  数字（/api/performance 里没有这一列，而表格只显示**当前这一轮**趋势的
-  逐日行，趋势一翻面旧的就查不到了）。一轮趋势能跑 28~139 天，所以一天
-  抓一次、偶尔漏一天也丢不了东西。
+  所有列都是价格的纯函数，事后都能重算 —— 没有任何一样东西是
+  「过期不候、只能当场抓」的，所以漏采一天也丢不了数据。
 
 自愈：每次正常运行都会顺手重写最近 5 个交易日的盘中文件。也就是说连续
 四天 cron 全丢，第五天成功那次会把前面全补回来，不需要人工干预。
@@ -19,7 +16,6 @@ REEF 研究数据采集 —— 每个交易日收盘后跑一次就够。
 产出（全部可重复：同一天跑两次结果一致，不会追加重复行）
   data/daily.csv              研究主表，一天一行
   data/briefs/<日期>.json     当日完整读数（daily.csv 的超集）
-  data/raincheck/<日期>.json  当日 raincheck 快照，含那个只能当场抓的 signal
   data/intraday/<日期>.csv    当日 15 分钟 K 线，QQQ/TQQQ/VIX，含盘前盘后
 
 用法
@@ -60,8 +56,6 @@ SPINE_COLS = [
     "vix_pctile_2y", "tqqq_rvol20", "tqqq_rvol60",
     "qqq_dd_1y", "tqqq_dd_1y",
     "direction_ok", "target_weight",
-    "rc_signal", "rc_trend_count", "rc_direction", "rc_n_days", "rc_asof",
-    "rc_qqq_cum", "rc_lev_cum", "cross_agree",
     "n_blocking", "n_warnings", "collected_at",
 ]
 
@@ -159,7 +153,7 @@ def write_spine(rows):
 
 def spine_row_from_brief(b, collected_at):
     """live 行：直接来自当日 build()，所有列都有值。"""
-    m, rf, rc, cc = b["market"], b.get("reef", {}), b.get("raincheck", {}), b.get("cross_check", {})
+    m, rf = b["market"], b.get("reef", {})
     return {
         "date": m["asof"], "source": "live",
         "qqq": r6(m["qqq"]), "tqqq": r6(m["tqqq"]), "vix": r6(m["vix"]),
@@ -173,11 +167,6 @@ def spine_row_from_brief(b, collected_at):
         "tqqq_rvol20": r6(m["tqqq_rvol20"]), "tqqq_rvol60": r6(m["tqqq_rvol60"]),
         "qqq_dd_1y": r6(m["qqq_dd_from_1y_high"]), "tqqq_dd_1y": r6(m["tqqq_dd_from_1y_high"]),
         "direction_ok": rf.get("direction_ok", ""), "target_weight": rf.get("target_weight", ""),
-        "rc_signal": rc.get("signal", ""), "rc_trend_count": rc.get("trend_count", ""),
-        "rc_direction": rc.get("direction", ""), "rc_n_days": rc.get("n_days", ""),
-        "rc_asof": rc.get("asof", ""), "rc_qqq_cum": rc.get("qqq_cum", ""),
-        "rc_lev_cum": rc.get("lev_cum", ""),
-        "cross_agree": "" if cc.get("agree") is None else cc["agree"],
         "n_blocking": len(b.get("blocking", [])), "n_warnings": len(b.get("warnings", [])),
         "collected_at": collected_at,
     }
@@ -189,8 +178,7 @@ def reconstruct_spine(collected_at):
     价格派生的那些列（均线、波动率、回撤、分位）全是价格的纯函数，事后
     算得出来，所以第一天就能拿到两年多的历史，不用从零攒。
 
-    raincheck 那几列留空 —— 那是黑箱信号，没有历史接口，只能从开始采集
-    的那天往后有。source 列标成 reconstructed，别和 live 行混着用。
+    source 列标成 reconstructed，别和 live 行混着用。
 
     与 build() 的差别只有一处，而且是**更严格**的方向：这里的 vix_pctile_2y
     是 point-in-time、严格取当日往前 504 个交易日（两年）算的；build() 用的
@@ -232,8 +220,6 @@ def reconstruct_spine(collected_at):
             "tqqq_dd_1y": r6((t[-1] / max(t[-252:]) - 1) * 100),
             "direction_ok": direction_ok,
             "target_weight": round(0.0 if not direction_ok else min(1.0, 0.35 / rv20), 4),
-            "rc_signal": "", "rc_trend_count": "", "rc_direction": "", "rc_n_days": "",
-            "rc_asof": "", "rc_qqq_cum": "", "rc_lev_cum": "", "cross_agree": "",
             "n_blocking": "", "n_warnings": "", "collected_at": collected_at,
         }
     return rows
@@ -251,7 +237,7 @@ def check(max_age_days=4):
     print(f"最新 live 数据 {last}，距今 {age} 天（共 {len(spine)} 行，其中 live {len(live)} 行）")
     if age > max_age_days:
         print(f"::error::采集已停摆：最新数据 {last}，距今 {age} 天（阈值 {max_age_days}）。"
-              f"多半是 Yahoo 把机房 IP 限流了，或者 raincheck 改了接口。")
+              f"多半是 Yahoo 把机房 IP 限流了。")
         return 1
     return 0
 
@@ -282,30 +268,21 @@ def main():
         log(f"  ⚠️  {x}")
 
     os.makedirs(os.path.join(DATA, "briefs"), exist_ok=True)
-    os.makedirs(os.path.join(DATA, "raincheck"), exist_ok=True)
     write_json_stable(os.path.join(DATA, "briefs", f"{asof}.json"), b, {"generated"})
 
-    # 2) raincheck 快照 —— 唯一过期不候的东西，单独存一份，
-    #    免得将来改 brief 结构时把它一起弄丢了。
-    rc = dict(b.get("raincheck", {}))
-    rc["_collected_at"] = collected_at
-    rc["_note"] = ("signal / trend_count 抓自 /api/current 的表格，该表只显示当前这一轮趋势；"
-                   "/api/performance 里没有 signal 这一列，所以这份快照过期不可补。")
-    write_json_stable(os.path.join(DATA, "raincheck", f"{asof}.json"), rc, {"_collected_at"})
-
-    # 3) 盘中 K 线。平时拉 5 天（自愈：补上前几次丢掉的 cron），
+    # 2) 盘中 K 线。平时拉 5 天（自愈：补上前几次丢掉的 cron），
     #    --backfill 拉满 Yahoo 给的 60 天。
     days = 60 if a.backfill else 5
     log(f"取 15 分钟 K 线（最近 {days} 天）…")
     n = write_intraday(fetch_intraday(days))
     log(f"  写出 {n} 个交易日的盘中文件")
 
-    # 4) 主表
+    # 3) 主表
     spine = read_spine()
     if a.backfill:
         log("用日线重建历史主表…")
         rebuilt = reconstruct_spine(collected_at)
-        # 已有的 live 行永远优先：它带着 raincheck 那几列，重建版没有。
+        # 已有的 live 行仍然优先：它是当天实时取的，重建版是事后算的。
         for d, r in rebuilt.items():
             if spine.get(d, {}).get("source") != "live":
                 spine[d] = r
