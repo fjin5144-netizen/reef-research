@@ -31,6 +31,10 @@ PT = ZoneInfo("America/Los_Angeles")
 
 CHART_DAYS = 252          # 图上画一年
 
+# 并行对照的记账起点。四条轨道的规则在这一天冻结，此后**不再修改**——
+# 改了规则再看成绩，实验就白做了。要换候选就另起一个起点、另开一列。
+TRACKS_START = "2026-08-21"
+
 
 def load():
     with open(os.path.join(DATA, "daily.csv"), newline="") as f:
@@ -112,6 +116,75 @@ def sparkline(rows, key, w=680, h=120, band=None):
     d = " ".join(("M" if k == 0 else "L") + f"{sx(i):.1f},{sy(v):.1f}"
                  for k, (i, v) in enumerate(pts))
     return d, lo, hi
+
+
+def momentum_tracks(rows):
+    """四种趋势门的并行纸上记账 —— 全部从主表价格现算，无状态、可重跑。
+
+    背景：2026-08-21 的回测研究发现「趋势还在不在」这个判定有一个反应速度
+    的刻度盘：均线快（假警报多、闪崩跑得快），12 个月动量慢（假警报少一半、
+    税后多赚约 1.4pp/年，但闪崩多挨 4~10pp）。回测无法替你选速度——快慢
+    各赢一种崩盘形状。所以在这里并排记账，让接下来的真实数据投票。
+
+    四条轨道共用同一套仓位规则（min(1, 35% ÷ TQQQ 20日波动率)、3pp 无交易带、
+    单边 2bp、现金按年化 4% 计息的近似），唯一差别是趋势判定：
+      现行    QQQ > 200 日均线
+      对半    均线一票 + 12个月动量一票，各管一半
+      三票    3 / 6 / 12 个月动量各一票
+      纯动量  QQQ > 12 个月前的价格
+    信号一律用前一日收盘；起点日按前一日信号建仓，首日不计成本。
+    """
+    ds, qs, ts = [], [], []
+    for r in rows:
+        q, t = f(r.get("qqq")), f(r.get("tqqq"))
+        if q is None or t is None:
+            continue
+        ds.append(r["date"]); qs.append(q); ts.append(t)
+    si = next((i for i, d in enumerate(ds) if d >= TRACKS_START), None)
+    if si is None or si < 253:
+        return None
+
+    def gate(kind, j):
+        if j < 252:
+            return None
+        if kind == "ma":
+            return 1.0 if qs[j] > sum(qs[j-199:j+1]) / 200 else 0.0
+        if kind == "mom":
+            return 1.0 if qs[j] > qs[j-252] else 0.0
+        if kind == "blend":
+            return (gate("ma", j) + gate("mom", j)) / 2
+        if kind == "vote":
+            return sum(1 for L in (63, 126, 252) if qs[j] > qs[j-L]) / 3
+
+    def target(kind, j):
+        g = gate(kind, j)
+        if g is None or j < 20:
+            return None
+        rr = [ts[k] / ts[k-1] - 1 for k in range(j-19, j+1)]
+        m = sum(rr) / 20
+        rv = (sum((x - m) ** 2 for x in rr) / 19) ** .5 * 252 ** .5
+        return g * max(0.0, min(1.0, 0.35 / rv)) if rv else None
+
+    out = []
+    for kind, name, color in (("ma",    "现行 · 200日均线门", "var(--accent)"),
+                              ("blend", "对半 · 均线+动量各一票", "var(--ok)"),
+                              ("vote",  "三票 · 3/6/12月动量", "var(--warn)"),
+                              ("mom",   "纯动量 · 12个月", "var(--dim)")):
+        cur = target(kind, si - 1) or 0.0
+        nav = [1.0]
+        for i in range(si + 1, len(ds)):
+            tgt = target(kind, i - 1)
+            if tgt is None:
+                tgt = cur
+            neww = cur if abs(tgt - cur) < 0.03 else tgt
+            r = neww * (ts[i] / ts[i-1] - 1) + (1 - neww) * 0.04 / 252 \
+                - abs(neww - cur) * 2e-4
+            cur = neww
+            nav.append(nav[-1] * (1 + r))
+        out.append({"name": name, "color": color,
+                    "w": target(kind, len(ds) - 1),
+                    "cum": (nav[-1] - 1) * 100, "nav": nav})
+    return {"start": ds[si], "days": len(ds) - si, "tracks": out}
 
 
 def render(live=None):
@@ -270,6 +343,42 @@ svg{{display:block;width:100%;height:auto}}
             stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
     </svg></div>
     <div class="cap">虚线是 200 日均线本身。线在虚线下方 = 方向条件不满足 = 目标权重归零。</div>
+  </div>
+''')
+
+    trk = momentum_tracks(rows)
+    if trk:
+        A(f'''  <div class="card">
+    <div class="lbl">并行对照（纸上实验） · 第 {trk["days"]} 个交易日</div>
+    <table>
+''')
+        for t in trk["tracks"]:
+            wtxt = f"{t['w']*100:.1f}%" if t["w"] is not None else "—"
+            cum = t["cum"]
+            cls = "ok" if cum > 0 else ("bad" if cum < 0 else "")
+            A(f'''      <tr><td class="k"><span style="color:{t["color"]}">●</span> {E(t["name"])}</td>
+        <td>{wtxt} <span class="{cls}" style="margin-left:8px">{cum:+.2f}%</span></td></tr>
+''')
+        A('    </table>\n')
+        if trk["days"] >= 6:
+            allv = [v for t in trk["tracks"] for v in t["nav"]]
+            lo, hi = min(allv), max(allv)
+            span = (hi - lo) or 1.0
+            n = max(len(trk["tracks"][0]["nav"]) - 1, 1)
+            paths = ""
+            for t in trk["tracks"]:
+                d = " ".join(("M" if k == 0 else "L")
+                             + f"{k/n*680:.1f},{120-(v-lo)/span*120:.1f}"
+                             for k, v in enumerate(t["nav"]))
+                paths += (f'<path d="{d}" fill="none" stroke="{t["color"]}" stroke-width="2" '
+                          f'stroke-linejoin="round" vector-effect="non-scaling-stroke"/>')
+            A(f'''    <div class="chart"><svg viewBox="0 0 680 120" preserveAspectRatio="none"
+      aria-label="并行对照净值">{paths}</svg></div>
+''')
+        A(f'''    <div class="cap">同一套仓位规则，四种「趋势还在不在」的判定并排记账（每格 = 最新目标权重 · 自
+      {E(trk["start"])} 累计）。规则已冻结，此后不改。回测说均线快、动量慢，快慢各赢一种崩盘——
+      这里让往后的真实行情投票。没跑过至少一次像样的回调之前，别急着读结论；
+      实际执行仍按上面的现行规则。</div>
   </div>
 ''')
 
